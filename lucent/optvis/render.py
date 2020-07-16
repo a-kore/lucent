@@ -27,20 +27,21 @@ from lucent.misc.io import show
 
 
 def render_vis(
-    model,
-    objective_f,
-    param_f=None,
-    optimizer=None,
-    transforms=None,
-    thresholds=(512,),
-    verbose=False,
-    preprocess=True,
-    progress=True,
-    show_image=True,
-    save_image=False,
-    image_name=None,
-    show_inline=False,
-    fixed_image_size=None,
+        model,
+        objective_f,
+        param_f=None,
+        image_dim=2,
+        optimizer=None,
+        transforms=None,
+        thresholds=(512,),
+        verbose=False,
+        preprocess=True,
+        progress=True,
+        show_image=True,
+        save_image=False,
+        image_name=None,
+        show_inline=False,
+        fixed_image_size=None,
 ):
     if param_f is None:
         param_f = lambda: param.image(128)
@@ -54,7 +55,8 @@ def render_vis(
     optimizer = optimizer(params)
 
     if transforms is None:
-        transforms = transform.standard_transforms.copy()
+        if image_dim == 2:
+            transforms = transform.standard_transforms.copy()
 
     if preprocess:
         if model._get_name() == "InceptionV1":
@@ -66,17 +68,18 @@ def render_vis(
             transforms.append(transform.normalize())
 
     # Upsample images smaller than 224
-    image_shape = image_f().shape
-    if fixed_image_size is not None:
-        new_size = fixed_image_size
-    elif image_shape[2] < 224 or image_shape[3] < 224:
-        new_size = 224
-    else:
-        new_size = None
-    if new_size:
-        transforms.append(
-            torch.nn.Upsample(size=new_size, mode="bilinear", align_corners=True)
-        )
+    if image_dim == 2:
+        image_shape = image_f().shape
+        if fixed_image_size is not None:
+            new_size = fixed_image_size
+        elif image_shape[2] < 224 or image_shape[3] < 224:
+            new_size = 224
+        else:
+            new_size = None
+        if new_size:
+            transforms.append(
+                torch.nn.Upsample(size=new_size, mode="bilinear", align_corners=True)
+            )
 
     transform_f = transform.compose(transforms)
 
@@ -108,7 +111,10 @@ def render_vis(
             loss.backward()
             optimizer.step()
             if i in thresholds:
-                image = tensor_to_img_array(image_f())
+                if image_dim == 2:
+                    image = tensor_to_img_array(image_f())
+                else:
+                    image = image_f().cpu().detach().numpy()
                 if verbose:
                     print("Loss at step {}: {:.3f}".format(i, objective_f(hook)))
                     if show_inline:
@@ -118,7 +124,8 @@ def render_vis(
         print("Interrupted optimization at step {:d}.".format(i))
         if verbose:
             print("Loss at step {}: {:.3f}".format(i, objective_f(hook)))
-        images.append(tensor_to_img_array(image_f()))
+        if image_dim == 2:
+            images.append(tensor_to_img_array(image_f()))
 
     if save_image:
         export(image_f(), image_name)

@@ -40,6 +40,18 @@ def rfft2d_freqs(h, w):
         fx = np.fft.fftfreq(w)[: w // 2 + 1]
     return np.sqrt(fx * fx + fy * fy)
 
+def rfft3d_freqs(d, h, w):
+    """Computes 2D spectrum frequencies."""
+    fy = np.fft.fftfreq(h)[:, None, None]
+    fz = np.fft.fftfreq(d)[None, :, None]
+    # when we have an odd input dimension we need to keep one additional
+    # frequency and later cut off 1 pixel
+    if w % 2 == 1:
+        fx = np.fft.fftfreq(w)[: w // 2 + 2]
+    else:
+        fx = np.fft.fftfreq(w)[: w // 2 + 1]
+
+    return np.cbrt(fx * fx + fy * fy + fz * fz)
 
 def fft_image(shape, sd=None, decay_power=1):
     batch, channels, h, w = shape
@@ -56,6 +68,26 @@ def fft_image(shape, sd=None, decay_power=1):
         scaled_spectrum_t = scale * spectrum_real_imag_t
         image = torch.irfft(scaled_spectrum_t, 2, normalized=True, signal_sizes=(h, w))
         image = image[:batch, :channels, :h, :w]
+        magic = 4.0 # Magic constant from Lucid library; increasing this seems to reduce saturation
+        image = image / magic
+        return image
+    return [spectrum_real_imag_t], inner
+
+def fft_image3d(shape, sd=None, decay_power=1):
+    batch, channels, d, h, w = shape
+    freqs = rfft3d_freqs(d, h, w)
+    init_val_size = (batch, channels) + freqs.shape + (2,) # 2 for imaginary and real components
+    sd = sd or 0.01
+
+    spectrum_real_imag_t = (torch.randn(*init_val_size) * sd).to(device).requires_grad_(True)
+
+    scale = 1.0 / np.maximum(freqs, 1.0 / max(w, h, d)) ** decay_power
+    scale = torch.tensor(scale).float()[None, None, ..., None].to(device)
+
+    def inner():
+        scaled_spectrum_t = scale * spectrum_real_imag_t
+        image = torch.irfft(scaled_spectrum_t, 3, normalized=True, signal_sizes=(d, h, w))
+        image = image[:batch, :channels, :d, :h, :w]
         magic = 4.0 # Magic constant from Lucid library; increasing this seems to reduce saturation
         image = image / magic
         return image

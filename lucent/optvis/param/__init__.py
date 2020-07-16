@@ -1,4 +1,5 @@
 from lucent.optvis.param.images import image
+from lucent.optvis.param.volumes import volume
 from lucent.optvis.param.spatial import *
 from lucent.optvis.param.lowres import *
 from lucent.optvis.param.cppn import *
